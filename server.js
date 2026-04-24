@@ -1,17 +1,17 @@
-// StudioMind Backend — Powered by Gemini Flash (FREE)
+// StudioMind Backend — Powered by Groq (FREE)
 //
 // Setup:
-//   1. Get free API key at aistudio.google.com
-//   2. npm install express cors @google/generative-ai
-//   3. Set env variable: GEMINI_API_KEY=your_key
+//   1. Get free API key at console.groq.com
+//   2. npm install express cors groq-sdk
+//   3. Set env variable: GROQ_API_KEY=your_key
 //   4. node server.js
 
 const express = require("express");
 const cors = require("cors");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk");
 
 const app = express();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 app.use(cors());
 app.use(express.json({ limit: "50kb" }));
@@ -139,41 +139,41 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Invalid messages array." });
   }
 
-  // Gemini uses "model" instead of "assistant"
-  // Split history (all but last) and the new user message (last)
-  const allMessages = messages.slice(-20);
-  const history = allMessages.slice(0, -1).map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: String(m.content).slice(0, 4000) }],
+  // Clean messages, cap history at 20
+  const cleanMessages = messages.slice(-20).map((m) => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: String(m.content).slice(0, 4000),
   }));
 
-  const lastMessage = allMessages[allMessages.length - 1];
-  const userText = String(lastMessage.content).slice(0, 4000);
+  // Prepend system message
+  const fullMessages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...cleanMessages,
+  ];
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: SYSTEM_PROMPT,
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile", // best free model on Groq
+      messages: fullMessages,
+      max_tokens: 1500,
+      temperature: 0.3, // lower = more precise code
     });
 
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(userText);
-    const reply = result.response.text();
-
+    const reply = completion.choices[0]?.message?.content || "No response.";
     res.json({ reply });
   } catch (err) {
-    console.error("Gemini error:", err.message);
+    console.error("Groq error:", err.message);
     res.status(500).json({ error: "AI request failed: " + err.message });
   }
 });
 
 // ── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "StudioMind", model: "gemini-2.0-flash" });
+  res.json({ status: "ok", service: "StudioMind", model: "llama-3.3-70b-versatile" });
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`StudioMind backend running on port ${PORT} (Gemini Flash - FREE)`);
+  console.log(`StudioMind backend running on port ${PORT} (Groq - FREE)`);
 });
